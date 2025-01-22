@@ -1,80 +1,86 @@
 from flask import Flask, request, jsonify
-import asyncio
 import json
-import os
-import requests
-
+import src.files as files
+import src.default as default
+import src.texte as texte
+import src.ia_description as IA_desc
+import warnings
+import torch
+import numpy as np
+warnings.filterwarnings("ignore", category=UserWarning)
 app = Flask(__name__)
 
-prt = {
-    'qualité': {
-        "scores": "(((score_9)), score_8_up, score_7_up, score_6_up), rating_explicit"
-    },
-    'sujets': {
-        "sujet": "warrior nordic 1girl (viking:1.5)",
-        'hair': 'short red hair, fluttering in the wind',
-        'breast': 'tiny breast',
-        'corpulence': 'skinny',
-        'tatoos': 'golden intricite runes tattoos on the neck:1.9 and all over the breast:1.5',
-        'face': 'pointed facial feathers',
-    },
-    'clothes': {
-        "description": "she wears vicking style panties and crop top",
-    },
-    'human_poses': {
-        "main_action": "walking towards the camera"
-    },
-    'background': {
-        "background": "forest dark background:0.3",
-        "light": "bokeh, gold highlights",
-        "effet": "particle effects",
-    },
-    'camera': {
-        "focused": "full length body focus",
-    },
-    'image': {
-        "image": "voluptuous, vivid colors, cinematic still"
-    }
-}
-
-def set_prompt(sub):
-    chaine = ""
-    for col in sub.values():
-        for key, value in col.items():
-            chaine += f"{value},"
-    return chaine
-
-def load_prompt_file(prompt_file):
-    if os.path.exists(prompt_file):
-        with open(prompt_file) as json_file:
-           return json.load(json_file)
-    else :
-        chaine="a so nicely cat"
-    return chaine
 
 
-def save_prt_to_json(filepath):
-    with open(filepath, 'w') as json_file:
-        json.dump(prt, json_file, indent=4)
+
+
+
+
+
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.float32):
+            return float(obj)
+        if isinstance(obj, torch.Tensor):
+            return obj.detach().cpu().numpy().tolist()
+        return super(NumpyEncoder, self).default(obj)
+
+app.json_encoder = NumpyEncoder  # Ajouter cette ligne après la création de l'app
+
+
+@app.route('/alive')
+def alive():
+    return jsonify({'message': 'Im alive'}), 200
+
+
+
+
 
 @app.route('/prompt', methods=['POST'])
 async def get_prompt():
     data = request.json
     name = data.get('name', 'default')  # Default to 'default' if name is not provided
     is_file = data.get('is_file', False)
-    chaines = []
+    chaine = []
     if not is_file: 
-        chaine = set_prompt(prt)
+        chaine = texte.set_prompt(default.default_prompt())
     else:
-       chaine = load_prompt_file(name + ".json")
+       values_file = files.load_prompt_file(name + ".json")
+       chaine = texte.set_prompt(values_file)
         
     
     return jsonify({"prompt": chaine, "name": name})
 
+@app.route('/caracteriser', methods=['POST'])
+async def description_brute():
+    data = request.json
+    desc = data.get('description')
+    if not desc:
+       return jsonify({'error': 'Missing file path'}), 400
+    
+    result = await IA_desc.convert(desc)
+    return jsonify({'text': result})
+
+
+
+
 if __name__ == '__main__':
+    import requests
+    import time
+
+    # Example of calling get_prompt with parameters name and is_file
     #save_prt_to_json('prt.json')
     app.run(debug=True)
-    # Example of calling get_prompt with parameters name and is_file
+
+    # Wait for the server to start
+    time.sleep(2)
+
+    # Call the /caracteriser route with the parameter "une jolie femme"
+    response = requests.post('http://localhost:5000/caracteriser', json={'brute': 'une jolie femme'})
+    print(response.json())
 
 
 
